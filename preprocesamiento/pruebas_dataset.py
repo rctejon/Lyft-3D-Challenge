@@ -3,15 +3,18 @@ from lyft_dataset_sdk.utils.geometry_utils import BoxVisibility, box_in_image, v
 import matplotlib.pyplot as plt
 from PIL import Image
 import numpy as np
+from tqdm import tqdm
 
 import json
 import random
 
-dataLyft3D = LyftDataset(data_path='./data/', json_path='./data/json', verbose=True)
-sample_data = list(filter(lambda x:x['sensor_modality']=='camera',dataLyft3D.sample_data))
-sample_ann = dataLyft3D.sample_annotation
+trainLyft = LyftDataset(data_path='./data/train/', json_path='./data/train/json', verbose=True)
+sample_dataTrain = list(filter(lambda x:x['sensor_modality']=='camera',trainLyft.sample_data))
 
-def render_ann(ann_token):
+valLyft = LyftDataset(data_path='./data/val/', json_path='./data/val/json', verbose=True)
+sample_dataVal = list(filter(lambda x:x['sensor_modality']=='camera',valLyft.sample_data))
+
+def render_ann(ann_token,dataLyft3D):
     ann_record = dataLyft3D.get("sample_annotation", ann_token)
     sample_record = dataLyft3D.get("sample", ann_record["sample_token"])
 
@@ -37,7 +40,7 @@ def render_ann(ann_token):
             c = np.array(LyftDatasetExplorer.get_color(box.name)) / 255.0
             render_box(box,axes, view=camera_intrinsic, normalize=True, colors=(c, c, c),im=im)
 
-def render_sample(sample_token):
+def render_sample(sample_token,dataLyft3D):
 
     fig, axes = plt.subplots(1, 1, figsize=(12, 6))
 
@@ -94,29 +97,29 @@ def clipDetections(corners, size):
     corners[:][1] = np.clip(corners[:][1],0,size[1] )
     return corners
 
-def getSampleData(sample_token):
+def getSampleData(sample_token,dataLyft3D):
     data_path, boxes, camera_intrinsic = dataLyft3D.get_sample_data(sample_token, selected_anntokens=None)
-    im = Image.open(data_path)
     newBoxes = []
+    im = Image.open(data_path)
     labels = list(map(lambda x : x.name,boxes))
     for box in boxes:
         # import pdb; pdb.set_trace()
         corners = view_points(box.corners(), camera_intrinsic, normalize=True)[:2, :]
         corners = clipDetections(corners,im.size)
         newBoxes.append(box3Dto2D(corners))
-    return im , newBoxes, labels
+    return data_path , newBoxes, labels
 
 data = json.load(open('./data/samples_split.json'))
 
 train_indices = data['train']
-val_indices = data['train']
+val_indices = data['val']
 
 
 sample_data_train = []
 sample_data_val = []
 
 for i in train_indices:
-    sample_data_train.append(sample_data[i])
+    sample_data_train.append(sample_dataTrain[i])
     # print(sample_data[i])
     # render_sample(sample_data[i]['token'])
     # plt.show()
@@ -129,15 +132,15 @@ for i in train_indices:
     # plt.show()
 
 for i in val_indices:
-    sample_data_val.append(sample_data[i])
+    sample_data_val.append(sample_dataVal[i])
     # print(sample_data[i])
     # render_sample(sample_data[i]['token'])
     # plt.show()
 
 print('Inicia división')
 
-subtrain = random.sample(sample_data_train,500)
-subval = random.sample(sample_data_val,150)
+# subtrain = random.sample(sample_data_train,500)
+# subval = random.sample(sample_data_val,150)
 subSamplingDict = {
     'train' : [],
     'val'   : []
@@ -145,11 +148,11 @@ subSamplingDict = {
 
 print('acaba el subsampling')
 
-for t in subtrain:
-    im, boxes, labels = getSampleData(t['token'])
-    im.save(f'./mini_data/train/{t["token"]}.jpg')
+for t in tqdm(sample_data_train):
+    im, boxes, labels = getSampleData(t['token'],trainLyft)
     obj = {
         t['token']:{
+            'path': str(im),
             'detections':[]
         }
     }
@@ -162,11 +165,11 @@ for t in subtrain:
 
 print('acaba de guardar el training')
 
-for v in subval:
-    im, boxes, labels = getSampleData(v['token'])
-    im.save(f'./mini_data/val/{v["token"]}.jpg')
+for v in tqdm(sample_data_val):
+    im, boxes, labels = getSampleData(v['token'],valLyft)
     obj = {
         v['token']:{
+            'path': str(im),
             'detections':[]
         }
     }
@@ -179,7 +182,7 @@ for v in subval:
 
 print('acaba de guardar el validation')
 
-json.dump(subSamplingDict, open('./mini_data/detections.json', 'w'))
+json.dump(subSamplingDict, open('./data/detections.json', 'w'))
 
 # i=0
 # while True:
